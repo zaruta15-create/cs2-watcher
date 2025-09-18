@@ -1,29 +1,37 @@
+# cs2_case_watcher.py
 import os, json, re, hashlib, requests, feedparser
 from bs4 import BeautifulSoup
 
+# --- Secrets из GitHub → Settings → Secrets and variables → Actions ---
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = int(os.environ["CHAT_ID"])
 
 STATE_FILE = "state.json"
 
+# --- RSS-источники (можно расширять) ---
 FEEDS = [
-    "https://store.steampowered.com/feeds/news/app/730/?cc=US&l=en",
-    "https://steamdb.info/app/730/patchnotes/rss/",
-    "https://www.reddit.com/r/csgomarketforum/.rss",
+    "https://store.steampowered.com/feeds/news/app/730/?cc=US&l=en",  # Steam News (CS)
+    "https://steamdb.info/app/730/patchnotes/rss/",                   # SteamDB patchnotes
+    "https://www.reddit.com/r/csgomarketforum/.rss",                  # Reddit CS:GO Market Forum
 ]
 
-KEYWORDS = [ 
+# --- Ключевые слова: факты + прогнозы (англ.) ---
+KEYWORDS = [
+    # Facts (already happened)
     "case removed", "removed from drop", "moved to rare drop",
     "moved to rare", "rare drop pool", "weekly drop",
     "no longer drops", "discontinued case",
 
+    # Predictions / future
     "will be removed", "expected removal", "might be removed",
     "could be removed", "possible removal", "expected to move",
     "might move to rare", "could move to rare",
 
+    # Case names for monitoring (expand as needed)
     "fracture case", "recoil case", "snakebite case", "dreams & nightmares case"
 ]
 
+# --- Мониторим гайд с таблицами (парсим HTML и считаем дифф списков) ---
 GUIDES = [
     {
         "name": "Steam Guide: CS2 Case Drop Pool",
@@ -31,10 +39,12 @@ GUIDES = [
     }
 ]
 
+# ---------- Вспомогательные ----------
 def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
+    # seen: просмотренные ID фидов; guide_hashes: хэш HTML; guide_cases: распарсенные списки по секциям
     return {"seen": [], "guide_hashes": {}, "guide_cases": {}}
 
 def save_state(state):
@@ -57,6 +67,7 @@ def fetch_url(url: str) -> str:
 def hash_text(txt: str) -> str:
     return hashlib.sha256(txt.encode("utf-8", errors="ignore")).hexdigest()
 
+# ---------- Парсим гайд: извлекаем кейсы из таблиц по секциям ----------
 def extract_cases_from_guide(html: str) -> dict:
     """
     Возвращает {'active': [...], 'rare': [...], 'unknown': [...]}
@@ -102,12 +113,14 @@ def extract_cases_from_guide(html: str) -> dict:
         sections[k] = sorted(set(sections[k]))
     return sections
 
+# ---------- Основной цикл ----------
 def run():
     st = load_state()
     seen = set(st.get("seen", []))
     alerts = []
 
-        for feed_url in FEEDS:
+    # 1) RSS-ленты: ищем ключевые фразы
+    for feed_url in FEEDS:
         feed = feedparser.parse(feed_url)
         for e in feed.entries:
             eid = e.get("id") or e.get("link") or e.get("title")
@@ -131,6 +144,7 @@ def run():
             "Check drop pool / rare pool context."
         )
 
+    # 2) Гайд: считаем дифф таблиц
     guide_hashes = st.get("guide_hashes", {})
     guide_cases = st.get("guide_cases", {})
 
@@ -140,7 +154,7 @@ def run():
             h = hash_text(html)
             guide_hashes[g["url"]] = h
 
-            current = extract_cases_from_guide(html)
+            current = extract_cases_from_guide(html)  # {'active': [...], 'rare': [...], 'unknown': [...]}
             prev = guide_cases.get(g["url"], {"active": [], "rare": [], "unknown": []})
 
             def diff_lists(new, old):
@@ -168,7 +182,8 @@ def run():
                 )
 
             guide_cases[g["url"]] = current
-        except Exception:            
+        except Exception:
+            # Не спамим ошибками сети/парсинга
             pass
 
     st["seen"] = list(seen)
