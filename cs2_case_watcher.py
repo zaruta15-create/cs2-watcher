@@ -114,6 +114,7 @@ def extract_cases_from_guide(html: str) -> dict:
 
 # ---------- Main ----------
 def run():
+    send("🧪 Test: Actions запустил скрипт")
     st = load_state()
     seen = set(st.get("seen", []))
     alerts = []
