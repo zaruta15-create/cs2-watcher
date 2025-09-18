@@ -2,7 +2,7 @@ name: CS2 Case Watcher
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -12,6 +12,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: state.json
+          key: cs2-watcher-state-${{ hashFiles('state.json') }}
+          restore-keys: |
+            cs2-watcher-state-
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -20,11 +28,16 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install requests feedparser
+          pip install requests feedparser beautifulsoup4
 
       - name: Run watcher
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          python cs2_case_watcher.py
+        run: python cs2_case_watcher.py
+
+      - name: Save state cache
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: cs2-watcher-state-${{ hashFiles('state.json') }}
